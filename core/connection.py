@@ -220,7 +220,7 @@ class ConnectionHandler:
                 break
 
             end_time = time.time()  # 记录结束时间
-            self.logger.debug(f"大模型返回时间时间: {end_time - start_time} 秒, 生成token={content}")
+            self.logger.info(f"大模型返回时间时间: {end_time - start_time} 秒, 生成token={content}")
             if is_segment(response_message):
                 segment_text = "".join(response_message[start:])
                 segment_text = get_string_no_punctuation_or_emoji(segment_text)

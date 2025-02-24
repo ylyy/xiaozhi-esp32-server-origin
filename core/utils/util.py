@@ -99,7 +99,7 @@ def check_password(password):
     检查密码是否满足以下条件：
     1. 密码长度大于八位。
     2. 密码包含英文和数字。
-    3. 密码不能包含“xiaozhi”字符。
+    3. 密码不能包含"xiaozhi"字符。
 
     :param password: 要检查的密码
     :return: 如果密码满足条件，则返回True；否则返回False。
@@ -112,7 +112,7 @@ def check_password(password):
     if not re.search(r'[A-Za-z]', password) or not re.search(r'[0-9]', password):
         return False
 
-    # 检查是否包含“xiaozhi”字符
+    # 检查是否包含"xiaozhi"字符
     if "xiaozhi" in password:
         return False
 

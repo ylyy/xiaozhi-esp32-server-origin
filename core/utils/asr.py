@@ -1,8 +1,10 @@
 import time
 import wave
 import os
+import sys
+import io
 from abc import ABC, abstractmethod
-import logging
+from config.logger import setup_logging
 from typing import Optional, Tuple, List
 import uuid
 import asyncio
@@ -12,12 +14,28 @@ import struct
 import aiohttp
 from pydub import AudioSegment
 
-import opuslib
+import opuslib_next
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
-logger = logging.getLogger(__name__)
+TAG = __name__
+logger = setup_logging()
 
+# 捕获标准输出
+class CaptureOutput:
+    def __enter__(self):
+        self._output = io.StringIO()
+        self._original_stdout = sys.stdout
+        sys.stdout = self._output
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        sys.stdout = self._original_stdout
+        self.output = self._output.getvalue()
+        self._output.close()
+
+        # 将捕获到的内容通过 logger 输出
+        if self.output:
+            logger.bind(tag=TAG).info(self.output.strip())
 
 class ASR(ABC):
     @abstractmethod
@@ -39,29 +57,29 @@ class FunASR(ASR):
 
         # 确保输出目录存在
         os.makedirs(self.output_dir, exist_ok=True)
-
-        self.model = AutoModel(
-            model=self.model_dir,
-            vad_kwargs={"max_single_segment_time": 30000},
-            disable_update=True,
-            hub="hf"
-            # device="cuda:0",  # 启用GPU加速
-        )
+        with CaptureOutput():
+            self.model = AutoModel(
+                model=self.model_dir,
+                vad_kwargs={"max_single_segment_time": 30000},
+                disable_update=True,
+                hub="hf"
+                # device="cuda:0",  # 启用GPU加速
+            )
 
     def save_audio_to_file(self, opus_data: List[bytes], session_id: str) -> str:
         """将Opus音频数据解码并保存为WAV文件"""
         file_name = f"asr_{session_id}_{uuid.uuid4()}.wav"
         file_path = os.path.join(self.output_dir, file_name)
 
-        decoder = opuslib.Decoder(16000, 1)  # 16kHz, 单声道
+        decoder = opuslib_next.Decoder(16000, 1)  # 16kHz, 单声道
         pcm_data = []
 
         for opus_packet in opus_data:
             try:
                 pcm_frame = decoder.decode(opus_packet, 960)  # 960 samples = 60ms
                 pcm_data.append(pcm_frame)
-            except opuslib.OpusError as e:
-                logger.error(f"Opus解码错误: {e}", exc_info=True)
+            except opuslib_next.OpusError as e:
+                logger.bind(tag=TAG).error(f"Opus解码错误: {e}", exc_info=True)
 
         with wave.open(file_path, "wb") as wf:
             wf.setnchannels(1)
@@ -78,7 +96,7 @@ class FunASR(ASR):
             # 保存音频文件
             start_time = time.time()
             file_path = self.save_audio_to_file(opus_data, session_id)
-            logger.debug(f"音频文件保存耗时: {time.time() - start_time:.3f}s | 路径: {file_path}")
+            logger.bind(tag=TAG).debug(f"音频文件保存耗时: {time.time() - start_time:.3f}s | 路径: {file_path}")
 
             # 语音识别
             start_time = time.time()
@@ -90,12 +108,12 @@ class FunASR(ASR):
                 batch_size_s=60,
             )
             text = rich_transcription_postprocess(result[0]["text"])
-            logger.debug(f"语音识别耗时: {time.time() - start_time:.3f}s | 结果: {text}")
+            logger.bind(tag=TAG).debug(f"语音识别耗时: {time.time() - start_time:.3f}s | 结果: {text}")
 
             return text, file_path
 
         except Exception as e:
-            logger.error(f"语音识别失败: {e}", exc_info=True)
+            logger.bind(tag=TAG).error(f"语音识别失败: {e}", exc_info=True)
             return None, None
 
         finally:
@@ -103,9 +121,9 @@ class FunASR(ASR):
             if self.delete_audio_file and file_path and os.path.exists(file_path):
                 try:
                     os.remove(file_path)
-                    logger.debug(f"已删除临时音频文件: {file_path}")
+                    logger.bind(tag=TAG).debug(f"已删除临时音频文件: {file_path}")
                 except Exception as e:
-                    logger.error(f"文件删除失败: {file_path} | 错误: {e}")
+                    logger.bind(tag=TAG).error(f"文件删除失败: {file_path} | 错误: {e}")
 
 
 class TTSonASR(ASR):
